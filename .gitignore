@@ -1,0 +1,79 @@
+# OS generated files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# IDE files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Frontend (Node.js/Vite/React)
+frontend/node_modules/
+frontend/dist/
+frontend/dist-ssr/
+frontend/build/
+frontend/.local
+frontend/.env.local
+frontend/.env.development.local
+frontend/.env.test.local
+frontend/.env.production.local
+
+# Frontend logs
+frontend/logs/
+frontend/*.log
+frontend/npm-debug.log*
+frontend/yarn-debug.log*
+frontend/yarn-error.log*
+frontend/pnpm-debug.log*
+frontend/lerna-debug.log*
+
+# Backend (Python)
+backend/__pycache__/
+backend/*/__pycache__/
+backend/*.py[cod]
+backend/*$py.class
+backend/.venv/
+backend/venv/
+backend/env/
+backend/ENV/
+backend.env
+backend.venv
+backend/.env
+backend/.env.*
+backend/*.egg-info/
+backend/dist/
+backend/build/
+backend/eggs/
+backend/eggs-info/
+backend/.mypy_cache/
+backend/.pytest_cache/
+backend/.coverage
+backend/htmlcov/
+
+# Logs
+*.log
+logs/
+
+# Temporary files
+*.tmp
+*.temp
+.cache/
+
+# Database
+*.db
+*.sqlite
+*.sqlite3
+
+# Secret keys and sensitive data
+*.key
+*.pem
+*.p12
+secrets/
+.ENV

@@ -1,0 +1,12 @@
+[project]
+name = "stumbler-backend"
+version = "0.1.0"
+description = "Minimal FastAPI backend for Stumbler"
+requires-python = ">=3.9"
+dependencies = [
+    "fastapi>=0.104.0",
+    "uvicorn>=0.24.0",
+]
+
+[tool.uv]
+python-version = "3.12"

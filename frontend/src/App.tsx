@@ -1,0 +1,23 @@
+import { BrowserRouter as Router, Routes, Route } from 'react-router-dom'
+import Home from './pages/Home'
+import StylesShowcase from './pages/styles-showcase'
+import EnhancedStumb from './pages/enhanced-stumb'
+import Stumber from './pages/stumber'
+import { ThemeProvider } from './components/theme-provider'
+
+function App() {
+  return (
+    <ThemeProvider defaultTheme="system" storageKey="vite-ui-theme" attribute="class">
+      <Router>
+        <Routes>
+          <Route path="/" element={<Home />} />
+          <Route path="/styles" element={<StylesShowcase />} />
+          <Route path="/enhanced" element={<EnhancedStumb />} />
+          <Route path="/stumber" element={<Stumber />} />
+        </Routes>
+      </Router>
+    </ThemeProvider>
+  )
+}
+
+export default App
