@@ -5,11 +5,12 @@ interface SimpleCardProps {
   date: string;
   comments?: number;
   likes?: number;
+  onClick?: () => void;
 }
 
-const SimpleCard = ({ title, description, author, date, comments, likes }: SimpleCardProps) => {
+const SimpleCard = ({ title, description, author, date, comments, likes, onClick }: SimpleCardProps) => {
   return (
-    <div className="rounded-lg p-6 cursor-pointer">
+    <div onClick={onClick} className="rounded-lg p-6 cursor-pointer hover:bg-gray-50 transition-colors">
       <h3 className="text-2xl font-extrabold text-gray-900 mb-3 leading-tight font-serif tracking-tight">{title}</h3>
       {description && (
         <p className="text-gray-700 text-sm mb-4 leading-relaxed">{description}</p>

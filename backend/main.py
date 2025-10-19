@@ -13,7 +13,8 @@ import uuid
 from google import genai
 from google.genai import types
 
-from gemini import stream_generate
+from gemini import stream_generate, stream_generate_with_search
+from rabbit_hole import generate_rabbit_hole
 
 app = FastAPI()
 
@@ -322,6 +323,20 @@ def gemini_text_stream(text: str = Body(..., embed=True)):
     return StreamingResponse(generator(), media_type="text/plain")
 
 
+# Gemini text streaming with Google Search grounding
+@app.post("/api/article/stream")
+def article_stream(text: str = Body(..., embed=True)):
+    """
+    Stream generate article content with Google Search grounding enabled.
+    Used for article detail pages to provide accurate, up-to-date information.
+    """
+    def generator():
+        for chunk in stream_generate_with_search(text):
+            yield chunk
+
+    return StreamingResponse(generator(), media_type="text/plain")
+
+
 # Helpers for image generation
 GENERATED_DIR = os.path.join(os.path.dirname(__file__), "generated")
 
@@ -456,6 +471,11 @@ async def orchestrate_job(job_id: str, text: Optional[str], image: Optional[Uplo
             await queue.put({"type": "articles_batch", "items": batch})
 
     async def summary_agent():
+        # Skip summary if this is a rabbit hole exploration
+        if "rabbit hole" in str(text).lower():
+            print("[summary_agent] Skipping summary for rabbit hole search")
+            return
+        
         prompt = text or "Discover something interesting"
 
         def run_summary():
@@ -476,11 +496,29 @@ async def orchestrate_job(job_id: str, text: Optional[str], image: Optional[Uplo
         except Exception:
             await queue.put({"type": "image_error"})
 
+    async def rabbit_hole_agent():
+        prompt = text or "Discover something interesting"
+        try:
+            result = await asyncio.to_thread(generate_rabbit_hole, prompt, None)
+            headlines = result.get("headlines", []) if isinstance(result, dict) else []
+            
+            # Emit each headline as a separate event
+            for headline in headlines:
+                if isinstance(headline, dict) and headline.get("title"):
+                    await queue.put({
+                        "type": "headline", 
+                        "title": headline.get("title"), 
+                        "caption": headline.get("caption", "")
+                    })
+        except Exception as e:
+            print(f"[rabbit_hole_agent] ERROR: {e}")
+            import traceback
+            traceback.print_exc()
+
     try:
         async with asyncio.TaskGroup() as tg:
-            tg.create_task(articles_agent())
-            tg.create_task(summary_agent())
-            tg.create_task(image_agent())
+            # Always run rabbit_hole_agent regardless of query
+            tg.create_task(rabbit_hole_agent())
     finally:
         await queue.put({"type": "done"})
 
@@ -516,6 +554,164 @@ async def search_stream(job: str):
             JOBS.pop(job, None)
 
     return StreamingResponse(gen(), media_type="text/plain")
+
+
+@app.post("/api/rabbit-hole")
+async def rabbit_hole(
+    query: str = Form(...),
+    image: Optional[UploadFile] = File(None)
+):
+    """
+    Generate rabbit hole headlines with Google Search grounding.
+    Accepts text query and/or image.
+    
+    Args:
+        query: Text query
+        image: Optional image file
+    
+    Returns:
+        JSON with query and array of headlines (title + caption)
+    """
+    try:
+        image_data = None
+        
+        if image:
+            image_data = await image.read()
+        
+        result = generate_rabbit_hole(query, image_data)
+        return result
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# WebSocket endpoint for real-time multimodal search
+@app.websocket("/ws/search")
+async def websocket_search(websocket: WebSocket):
+    await websocket.accept()
+    try:
+        while True:
+            # Receive message from client
+            message = await websocket.receive_text()
+            data = json.loads(message)
+            
+            text = data.get("text")
+            image_base64 = data.get("image")
+            source = data.get("source", "home")
+            
+            # Convert base64 image to bytes if provided
+            image_data = None
+            if image_base64:
+                try:
+                    image_data = base64.b64decode(image_base64)
+                except Exception:
+                    pass
+            
+            # Create a queue for this request
+            q: asyncio.Queue = asyncio.Queue()
+            
+            # Create orchestration task
+            async def send_results():
+                loop = asyncio.get_running_loop()
+                
+                async def articles_agent():
+                    items = [a.to_dict() for a in ARTICLES]
+                    step = 5
+                    for i in range(0, len(items), step):
+                        await asyncio.sleep(0.15)
+                        batch = items[i:i+step]
+                        await q.put({"type": "articles_batch", "items": batch})
+                
+                async def summary_agent():
+                    # Skip summary if this is a rabbit hole exploration (JSON format detection)
+                    if "rabbit hole" in str(text).lower() and "json" in str(text).lower():
+                        return
+                    
+                    prompt = text or "Discover something interesting"
+                    
+                    def run_summary():
+                        for chunk in stream_generate(prompt):
+                            loop.call_soon_threadsafe(q.put_nowait, {"type": "summary_chunk", "text": chunk})
+                    
+                    await asyncio.to_thread(run_summary)
+                    await q.put({"type": "summary_done"})
+                
+                async def image_agent():
+                    prompt = text or "Generate a fitting visual"
+                    try:
+                        result = await asyncio.to_thread(generate_images, prompt)
+                        for img in result.get("images", []):
+                            await q.put({"type": "image", **img})
+                        if result.get("text"):
+                            await q.put({"type": "image_text", "text": result["text"]})
+                    except Exception:
+                        await q.put({"type": "image_error"})
+                
+                async def rabbit_hole_agent():
+                    prompt = text or "Discover something interesting"
+                    try:
+                        result = await asyncio.to_thread(generate_rabbit_hole, prompt, image_data)
+                        headlines = result.get("headlines", [])
+                        # Emit each headline as a separate event
+                        for headline in headlines:
+                            if isinstance(headline, dict) and headline.get("title"):
+                                await q.put({
+                                    "type": "headline", 
+                                    "title": headline.get("title"), 
+                                    "caption": headline.get("caption", "")
+                                })
+                    except Exception as e:
+                        print(f"[rabbit_hole_agent] ERROR: {e}")
+                        import traceback
+                        traceback.print_exc()
+                
+                async def hero_image_agent():
+                    """Generate a hero image for the rabbit hole search"""
+                    prompt = text or "Discover something interesting"
+                    image_prompt = f"Create a striking, abstract visual representation of: {prompt}. Make it mysterious, intriguing, and visually captivating."
+                    try:
+                        print(f"[hero_image_agent] Generating image for: {prompt[:50]}")
+                        result = await asyncio.to_thread(generate_images, image_prompt)
+                        if result.get("images") and len(result["images"]) > 0:
+                            # Emit the first generated image as the hero image
+                            hero_img = result["images"][0]
+                            await q.put({"type": "hero_image", "path": hero_img["path"], "mime_type": hero_img.get("mime_type", "image/png")})
+                            print(f"[hero_image_agent] Hero image emitted: {hero_img['path']}")
+                    except Exception as e:
+                        print(f"[hero_image_agent] ERROR: {e}")
+                        import traceback
+                        traceback.print_exc()
+                
+                try:
+                    async with asyncio.TaskGroup() as tg:
+                        # For regular searches, run rabbit_hole_agent (headlines) + hero image
+                        print("[WebSocket] Regular search request - generating headlines + hero image")
+                        tg.create_task(rabbit_hole_agent())
+                        tg.create_task(hero_image_agent())
+                finally:
+                    await q.put({"type": "done"})
+            
+            # Run orchestration
+            orchestration_task = asyncio.create_task(send_results())
+            
+            # Send results from queue to WebSocket
+            try:
+                while True:
+                    evt = await q.get()
+                    await websocket.send_json(evt)
+                    if evt.get("type") == "done":
+                        break
+            except Exception:
+                pass
+            finally:
+                orchestration_task.cancel()
+    
+    except WebSocketDisconnect:
+        pass
+    except Exception as e:
+        try:
+            await websocket.close(code=1011)
+        except Exception:
+            pass
 
 
 if __name__ == "__main__":

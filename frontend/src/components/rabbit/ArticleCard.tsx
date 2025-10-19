@@ -8,6 +8,7 @@ interface ArticleCardProps {
   likes?: number;
   emojis?: string[];
   hasVideo?: boolean;
+  onClick?: () => void;
 }
 
 const ArticleCard = ({
@@ -19,10 +20,11 @@ const ArticleCard = ({
   comments,
   likes,
   emojis,
-  hasVideo = false
+  hasVideo = false,
+  onClick
 }: ArticleCardProps) => {
   return (
-    <div className="rounded-lg overflow-hidden cursor-pointer">
+    <div onClick={onClick} className="rounded-lg overflow-hidden cursor-pointer hover:shadow-lg transition-shadow">
       {image && (
         <div className="relative">
           <img src={image} alt={title} className="w-full h-36 object-cover rounded-lg"/>

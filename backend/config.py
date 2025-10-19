@@ -16,7 +16,7 @@ LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO")
 # API Settings
 MAX_IMAGE_SIZE_MB = int(os.getenv("MAX_IMAGE_SIZE_MB", "10"))
 MAX_TOKENS = int(os.getenv("MAX_TOKENS", "8192"))
-TEMPERATURE = float(os.getenv("TEMPERATURE", "0.7"))
+TEMPERATURE = float(os.getenv("TEMPERATURE", "1.0"))
 
 def validate_config():
     """Validate that required configuration is present."""

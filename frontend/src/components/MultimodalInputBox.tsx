@@ -2,7 +2,6 @@ import { useState, useRef } from 'react';
 import type { ChangeEvent } from 'react';
 import { Search, Image as ImageIcon, X, Radio, Loader2 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
-import { multimodalSearch, startSearch } from '@/lib/api';
 
 interface MultimodalInputBoxProps {
   onFeelingLucky?: () => void;
@@ -51,16 +50,19 @@ const MultimodalInputBox = ({ onFeelingLucky, showFeelingLucky = false, source =
     setIsLoading(true);
 
     try {
-      const { job_id } = await startSearch({
-        text: textInput,
-        image: selectedImage,
-        isLive,
-        source,
+      navigate('/rabbit', { 
+        state: { 
+          query: textInput,
+          searchParams: {
+            text: textInput,
+            image: selectedImage,
+            source,
+            isLive,
+          }
+        } 
       });
-      navigate(`/rabbit?job=${job_id}`, { state: { query: textInput } });
     } catch (error) {
-      console.error('Error submitting multimodal search:', error);
-      // Navigate to rabbit page even on error
+      console.error('Error submitting search:', error);
       navigate('/rabbit', { state: { query: textInput } });
     } finally {
       setIsLoading(false);

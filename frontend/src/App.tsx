@@ -6,6 +6,7 @@ import Stumber from './pages/stumber'
 import { ThemeProvider } from './components/theme-provider'
 import Stumble from './pages/Stumble';
 import Rabbit from './pages/rabbit';
+import ArticleDetail from './pages/ArticleDetail';
 
 function App() {
   return (
@@ -20,6 +21,7 @@ function App() {
           <Route path="/stumble" element={<Stumble />} />
           <Route path="/stumble/:id" element={<Stumble />} />
           <Route path="/rabbit" element={<Rabbit />} />
+          <Route path="/article" element={<ArticleDetail />} />
         </Routes>
       </Router>
     </ThemeProvider>
