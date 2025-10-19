@@ -2,11 +2,16 @@
 name = "stumbler-backend"
 version = "0.1.0"
 description = "Minimal FastAPI backend for Stumbler"
-requires-python = ">=3.9"
+requires-python = ">=3.11"
 dependencies = [
-    "fastapi>=0.104.0",
-    "uvicorn>=0.24.0",
+    "fastapi>=0.115.0",
+    "wheel",
+    "python-multipart>=0.0.20",
+    "uvicorn>=0.30.6",
+    "pydantic>2.9.2",
+    "google-genai>=0.8.0",
+    "python-dotenv>=1.0.0",
+    "pillow>=10.0.0",
+    "opencv-python",
+    "mss",
 ]
-
-[tool.uv]
-python-version = "3.12"

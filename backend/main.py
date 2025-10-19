@@ -1,6 +1,19 @@
-from fastapi import FastAPI
+from fastapi import FastAPI, File, UploadFile, Form, Body, WebSocket, WebSocketDisconnect, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from typing import List, Optional
+from fastapi.responses import StreamingResponse, JSONResponse
+from typing import List, Optional, Dict
+import base64
+import io
+import os
+import mimetypes
+import asyncio
+import json
+import uuid
+
+from google import genai
+from google.genai import types
+
+from gemini import stream_generate
 
 app = FastAPI()
 
@@ -249,6 +262,260 @@ def health_check():
 def get_articles():
     """Get all articles"""
     return [article.to_dict() for article in ARTICLES]
+
+
+@app.post("/api/multimodal-search")
+async def multimodal_search(
+    text: Optional[str] = Form(None),
+    image: Optional[UploadFile] = File(None),
+    is_live: Optional[bool] = Form(False),
+    source: Optional[str] = Form("home")
+):
+    """
+    Process multimodal input (text and/or image) and return articles
+    
+    Args:
+        text: Text query input
+        image: Image file upload
+        is_live: Whether live mode is enabled
+        source: Source of the request (e.g., "home", "stumber")
+    """
+    # Process the input (for now, just return the articles)
+    # In a real implementation, you would process the image and text
+    # to find relevant content
+    
+    result = {
+        "success": True,
+        "query": {
+            "text": text,
+            "has_image": image is not None,
+            "is_live": is_live,
+            "source": source
+        },
+        "articles": [article.to_dict() for article in ARTICLES]
+    }
+    
+    # If image was uploaded, you could process it here
+    if image:
+        # Read image content (optional, for future processing)
+        image_content = await image.read()
+        result["query"]["image_size"] = len(image_content)
+        result["query"]["image_type"] = image.content_type
+    
+    # Different logic based on source
+    if source == "stumber":
+        # In the future, you could filter or sort articles differently for stumber page
+        result["message"] = "Processing from stumber page"
+    elif source == "home":
+        result["message"] = "Processing from home page"
+    
+    return result
+
+
+# Gemini text streaming endpoint
+@app.post("/api/gemini/text-stream")
+def gemini_text_stream(text: str = Body(..., embed=True)):
+    def generator():
+        for chunk in stream_generate(text):
+            yield chunk
+
+    return StreamingResponse(generator(), media_type="text/plain")
+
+
+# Helpers for image generation
+GENERATED_DIR = os.path.join(os.path.dirname(__file__), "generated")
+
+
+def save_binary_file(file_path: str, data):
+    os.makedirs(os.path.dirname(file_path), exist_ok=True)
+    if isinstance(data, (bytes, bytearray)):
+        buf = data
+    elif isinstance(data, str):
+        try:
+            buf = base64.b64decode(data)
+        except Exception:
+            buf = data.encode()
+    else:
+        buf = bytes(data)
+    with open(file_path, "wb") as f:
+        f.write(buf)
+
+
+def generate_images(prompt: str):
+    client = genai.Client(api_key=os.environ.get("GEMINI_API_KEY"))
+
+    model = os.environ.get("GEMINI_IMAGE_MODEL", "gemini-2.5-flash-image")
+    contents = [
+        types.Content(role="user", parts=[types.Part.from_text(text=prompt)]),
+    ]
+    cfg = types.GenerateContentConfig(response_modalities=["IMAGE", "TEXT"])
+
+    out = {"text": "", "images": []}
+    file_index = 0
+
+    for chunk in client.models.generate_content_stream(
+        model=model, contents=contents, config=cfg
+    ):
+        has_inline = False
+        if (
+            getattr(chunk, "candidates", None)
+            and chunk.candidates[0].content
+            and getattr(chunk.candidates[0].content, "parts", None)
+        ):
+            for part in chunk.candidates[0].content.parts:
+                inline = getattr(part, "inline_data", None)
+                if inline and getattr(inline, "data", None):
+                    file_name = f"image_{file_index}"
+                    file_index += 1
+                    file_ext = mimetypes.guess_extension(inline.mime_type) or ".bin"
+                    file_path = os.path.join(GENERATED_DIR, f"{file_name}{file_ext}")
+                    save_binary_file(file_path, inline.data)
+                    out["images"].append({
+                        "path": file_path,
+                        "mime_type": inline.mime_type,
+                    })
+                    has_inline = True
+        if not has_inline and getattr(chunk, "text", None):
+            out["text"] += chunk.text
+
+    return out
+
+
+# Gemini image generation endpoint (returns JSON with saved image paths and text)
+@app.post("/api/gemini/image-generate")
+def gemini_image_generate(text: str = Body(..., embed=True)):
+    result = generate_images(text)
+    return JSONResponse(result)
+
+
+# Live websocket (basic text relay to Gemini Live API)
+@app.websocket("/ws/gemini/live")
+async def gemini_live_ws(websocket: WebSocket):
+    await websocket.accept()
+    client = genai.Client(
+        http_options={"api_version": "v1beta"},
+        api_key=os.environ.get("GEMINI_API_KEY"),
+    )
+
+    config = types.LiveConnectConfig(
+        response_modalities=["TEXT"],
+        media_resolution="MEDIA_RESOLUTION_MEDIUM",
+    )
+
+    model = os.environ.get(
+        "GEMINI_LIVE_MODEL",
+        "models/gemini-2.5-flash-native-audio-preview-09-2025",
+    )
+
+    async def ws_to_model(session):
+        try:
+            while True:
+                msg = await websocket.receive_text()
+                await session.send(input=msg or ".", end_of_turn=True)
+        except WebSocketDisconnect:
+            pass
+
+    async def model_to_ws(session):
+        try:
+            while True:
+                turn = session.receive()
+                async for response in turn:
+                    if text := response.text:
+                        await websocket.send_text(text)
+        except WebSocketDisconnect:
+            pass
+
+    try:
+        async with (
+            client.aio.live.connect(model=model, config=config) as session,
+            asyncio.TaskGroup() as tg,
+        ):
+            tg.create_task(ws_to_model(session))
+            tg.create_task(model_to_ws(session))
+    except Exception:
+        # On any error, ensure the websocket is closed
+        try:
+            await websocket.close()
+        except Exception:
+            pass
+
+
+# Orchestrated search (subagents + streaming)
+JOBS: Dict[str, asyncio.Queue] = {}
+
+
+async def orchestrate_job(job_id: str, text: Optional[str], image: Optional[UploadFile], source: Optional[str], queue: asyncio.Queue):
+    loop = asyncio.get_running_loop()
+
+    async def articles_agent():
+        items = [a.to_dict() for a in ARTICLES]
+        step = 5
+        for i in range(0, len(items), step):
+            await asyncio.sleep(0.15)
+            batch = items[i:i+step]
+            await queue.put({"type": "articles_batch", "items": batch})
+
+    async def summary_agent():
+        prompt = text or "Discover something interesting"
+
+        def run_summary():
+            for chunk in stream_generate(prompt):
+                loop.call_soon_threadsafe(queue.put_nowait, {"type": "summary_chunk", "text": chunk})
+
+        await asyncio.to_thread(run_summary)
+        await queue.put({"type": "summary_done"})
+
+    async def image_agent():
+        prompt = text or "Generate a fitting visual"
+        try:
+            result = await asyncio.to_thread(generate_images, prompt)
+            for img in result.get("images", []):
+                await queue.put({"type": "image", **img})
+            if result.get("text"):
+                await queue.put({"type": "image_text", "text": result["text"]})
+        except Exception:
+            await queue.put({"type": "image_error"})
+
+    try:
+        async with asyncio.TaskGroup() as tg:
+            tg.create_task(articles_agent())
+            tg.create_task(summary_agent())
+            tg.create_task(image_agent())
+    finally:
+        await queue.put({"type": "done"})
+
+
+@app.post("/api/search/start")
+async def search_start(
+    text: Optional[str] = Form(None),
+    image: Optional[UploadFile] = File(None),
+    is_live: Optional[bool] = Form(False),
+    source: Optional[str] = Form("home"),
+):
+    job_id = uuid.uuid4().hex
+    q: asyncio.Queue = asyncio.Queue()
+    JOBS[job_id] = q
+    asyncio.create_task(orchestrate_job(job_id, text, image, source, q))
+    return {"job_id": job_id}
+
+
+@app.get("/api/search/stream")
+async def search_stream(job: str):
+    q = JOBS.get(job)
+    if not q:
+        raise HTTPException(status_code=404, detail="job not found")
+
+    async def gen():
+        try:
+            while True:
+                evt = await q.get()
+                yield json.dumps(evt) + "\n"
+                if evt.get("type") == "done":
+                    break
+        finally:
+            JOBS.pop(job, None)
+
+    return StreamingResponse(gen(), media_type="text/plain")
 
 
 if __name__ == "__main__":

@@ -19,6 +19,7 @@ import { FocusMode } from '../components/stumber/FocusMode';
 import { SavedNotification } from '../components/stumber/SavedNotification';
 import StumbleBar from '../components/StumbleBar';
 import { getWebsiteById, getSuggestions, getRandomWebsite, sampleWebsites, type Website } from '../data/sampleWebsites';
+import { textStream } from '@/lib/api';
 
 // Convert Website to SampleContent format
 const websiteToSampleContent = (website: Website): SampleContent => {
@@ -78,6 +79,8 @@ const Stumber = () => {
   const [headerExpanded, setHeaderExpanded] = useState<boolean>(false);
   const [voiceActive, setVoiceActive] = useState<boolean>(false);
   const [focusMode, setFocusMode] = useState<boolean>(false);
+  const [headlines, setHeadlines] = useState<Array<{ title: string; url?: string; source?: string }>>([]);
+  const [headlinesLoading, setHeadlinesLoading] = useState<boolean>(false);
 
   // Load website from URL params
   useEffect(() => {
@@ -112,6 +115,51 @@ const Stumber = () => {
     }
     return () => document.body.classList.remove('overflow-hidden');
   }, [focusMode]);
+
+  // Stream headlines for the active page
+  useEffect(() => {
+    if (!activeSample) return;
+    let cancelled = false;
+    setHeadlines([]);
+    setHeadlinesLoading(true);
+
+    const prompt = `Return concise web headlines about: ${activeSample.title} (${activeSample.url}).
+Output ONLY newline-delimited JSON (NDJSON), one object per line with keys: "title" (string), "url" (string, optional), "source" (string, optional).
+Generate 6 items maximum. No prose, no prefix/suffix.`;
+
+    (async () => {
+      try {
+        let buffer = '';
+        await textStream(prompt, (chunk) => {
+          if (cancelled) return;
+          buffer += chunk;
+          const parts = buffer.split('\n');
+          buffer = parts.pop() || '';
+          for (const line of parts) {
+            const trimmed = line.trim();
+            if (!trimmed) continue;
+            try {
+              const obj = JSON.parse(trimmed);
+              if (!obj || !obj.title) continue;
+              setHeadlines((prev) => {
+                if (prev.find((h) => h.title === obj.title)) return prev;
+                const next = [...prev, { title: obj.title, url: obj.url, source: obj.source }];
+                return next.slice(0, 8);
+              });
+            } catch {
+              // Ignore malformed lines
+            }
+          }
+        });
+      } finally {
+        if (!cancelled) setHeadlinesLoading(false);
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [activeSample?.id]);
 
   const handleMoodChange = (event: ChangeEvent<HTMLSelectElement>) => {
     const nextMood = moodOptions.find((option) => option.id === event.target.value) ?? moodOptions[0];
@@ -165,10 +213,36 @@ const Stumber = () => {
           <div className="lg:col-span-2 space-y-6">
             <HeroCard content={activeSample} />
             <LivePreview url={activeSample.url} title={activeSample.title} />
+
+            {/* Headlines Section */}
+            <div className="bg-gray-800 rounded-lg shadow-sm border border-gray-700 p-6">
+              <h3 className="text-lg font-semibold text-white mb-4">Headlines</h3>
+              {headlinesLoading && headlines.length === 0 ? (
+                <div className="space-y-2 animate-pulse">
+                  <div className="h-4 bg-gray-700 rounded w-3/4" />
+                  <div className="h-4 bg-gray-700 rounded w-2/3" />
+                  <div className="h-4 bg-gray-700 rounded w-4/5" />
+                </div>
+              ) : (
+                <ul className="space-y-2">
+                  {headlines.map((h, idx) => (
+                    <li key={idx} className="text-sm text-gray-200">
+                      {h.url ? (
+                        <a href={h.url} target="_blank" rel="noreferrer" className="hover:text-blue-400 transition-fast">{h.title}</a>
+                      ) : (
+                        <span>{h.title}</span>
+                      )}
+                      {h.source && <span className="text-xs text-gray-400 ml-2">({h.source})</span>}
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
           </div>
 
           <aside className="space-y-6">
             {journalSaved && <SavedNotification tag={activeSample.tags[0]} />}
+            
             <AISummary summary={activeSample.summary} visible={summaryVisible} category={activeSample.category} />
             <ExpansionList expansions={activeSample.expansions} category={activeSample.category} accent={accent} />
             <CommunityPulse reactions={activeSample.communityPulse} category={activeSample.category} />

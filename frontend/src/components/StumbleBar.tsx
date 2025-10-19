@@ -38,7 +38,7 @@ const StumbleBar = ({ showNewStumble = false, compact = false }: StumbleBarProps
             <div className="w-8 h-8 rounded-lg bg-primary flex items-center justify-center">
               <span className="text-lg">🔮</span>
             </div>
-            <div className="flex flex-col">
+            <div className="flex items-center space-x-2">
               <span className="text-xs text-muted-foreground uppercase tracking-wide">Stumbler</span>
               <span className="text-sm font-semibold text-foreground">Serendipity Engine</span>
             </div>

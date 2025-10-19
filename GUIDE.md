@@ -1,5 +1,8 @@
 Remember
 
+# OVERALL:
+- Servers on front end and backend are already running. Front end at 5173 and backend at 8000. NO need to run new servers. 
+
 # UI
 - Every style element should be a variable in index.css. and use tailwind's capabilities and shadcn's theming to control the styles: https://ui.shadcn.com/docs/theming
 - That is i wnat a flow such that if i change a color centrally, its reflected everywhere. 

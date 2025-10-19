@@ -8,37 +8,47 @@ import ArticleList from '../components/rabbit/ArticleList';
 import StumbleBar from '../components/StumbleBar';
 import { articles as fallbackArticles } from '../data/articles';
 import type { Article } from '../data/articles';
+import { streamSearch } from '@/lib/api';
 
 const Rabbit = () => {
   const location = useLocation();
+  const params = new URLSearchParams(location.search);
+  const jobId = params.get('job');
   const searchQuery = location.state?.query || '';
-  const [articles, setArticles] = useState<Article[]>(fallbackArticles);
+  const articlesFromState = location.state?.articles;
+  const [articles, setArticles] = useState<Article[]>(articlesFromState || fallbackArticles);
   const [isLoading, setIsLoading] = useState(false);
+  const [summary, setSummary] = useState<string>('');
+  const [images, setImages] = useState<{path:string; mime_type?: string}[]>([]);
 
   useEffect(() => {
-    const fetchArticles = async () => {
-      try {
-        setIsLoading(true);
-        const response = await fetch('http://localhost:8000/api/articles');
-        if (response.ok) {
-          const data = await response.json();
-          setArticles(data);
-        } else {
-          // Fallback to static data if API fails
-          console.log('API not available, using fallback data');
-          setArticles(fallbackArticles);
-        }
-      } catch (error) {
-        // Fallback to static data on error
-        console.log('Error fetching articles, using fallback data:', error);
-        setArticles(fallbackArticles);
-      } finally {
-        setIsLoading(false);
-      }
-    };
+    if (articlesFromState) { setArticles(articlesFromState); return; }
 
-    fetchArticles();
-  }, [searchQuery]);
+    if (!jobId) return;
+
+    setIsLoading(true);
+    let done = false;
+    streamSearch(jobId, (evt) => {
+      switch (evt.type) {
+        case 'articles_batch':
+          setArticles((prev) => {
+            const all = [...prev.filter(a => a && a.id), ...evt.items];
+            return all as Article[];
+          });
+          break;
+        case 'summary_chunk':
+          setSummary((s) => s + evt.text);
+          break;
+        case 'image':
+          setImages((imgs) => [...imgs, { path: evt.path, mime_type: evt.mime_type }]);
+          break;
+        case 'done':
+          done = true; setIsLoading(false); break;
+      }
+    }).catch(() => setIsLoading(false));
+
+    return () => { if (!done) setIsLoading(false); };
+  }, [searchQuery, articlesFromState, jobId]);
 
   const leftSidebar = articles.slice(0, 3);
   const rightSidebar = articles.slice(3, 5);
@@ -107,6 +117,22 @@ const Rabbit = () => {
           {/* CENTER - Hero Section */}
           <div className="lg:col-span-6">
             <HeroSection />
+            {summary && (
+              <div className="mt-4 p-4 rounded-lg bg-white/70 text-gray-800">
+                <h3 className="font-semibold mb-2">AI Summary</h3>
+                <p className="whitespace-pre-wrap">{summary}</p>
+              </div>
+            )}
+            {images.length > 0 && (
+              <div className="mt-4 grid grid-cols-2 gap-2">
+                {images.map((img, idx) => (
+                  <div key={idx} className="rounded overflow-hidden bg-white/60">
+                    <img src={`${img.path.startsWith('backend/') ? 'http://localhost:8000/' + img.path.replace('backend/', '') : 'http://localhost:8000/' + img.path}`}
+                         alt={`generated-${idx}`} />
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
 
           {/* RIGHT SIDEBAR */}
