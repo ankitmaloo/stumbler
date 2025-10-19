@@ -1,7 +1,7 @@
-import Stumb from './stumb'
+import HomePage from './HomePage'
 
 const Home = () => {
-  return <Stumb />
+  return <HomePage />
 }
 
 export default Home
