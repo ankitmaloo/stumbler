@@ -1,0 +1,69 @@
+╔══════════════════════════════════════════════════════════════════════╗
+║              ✅ CORRECTED - Ready for Testing                        ║
+╚══════════════════════════════════════════════════════════════════════╝
+
+🔧 WHAT WAS FIXED:
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+You were right! I corrected the implementation to use the existing
+"Expand the rabbit hole" widget instead of adding a new one.
+
+✅ Modified DirectionSelector component
+   → Now uses MultimodalInputBox with source="stumber"
+
+✅ Removed duplicate "Discover More" widget
+   → Was added by mistake in sidebar
+
+✅ Same API with source tags
+   → Home: source="home"
+   → Stumber: source="stumber" (via "Expand the rabbit hole")
+
+
+📍 WHERE TO FIND IT:
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Home Page:
+  • Center of screen
+  • Large MultimodalInputBox
+  • source="home"
+
+Stumber Page:
+  • Right sidebar
+  • Inside "Expand the rabbit hole" card
+  • Above "Suggested Paths" section
+  • Text: "Where do you want to stumble next?"
+  • source="stumber"
+
+
+🧪 QUICK TEST:
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+1. Stumber Page:
+   • Go to http://localhost:5173/stumber/1
+   • Look for "Expand the rabbit hole" card (right sidebar)
+   • Should see search box with text "Where do you want to stumble next?"
+   • Enter query → Click Discover
+   • F12 Network → Check request has source="stumber"
+
+2. Home Page:
+   • Go to http://localhost:5173/
+   • Large search box in center
+   • Enter query → Click Discover
+   • F12 Network → Check request has source="home"
+
+
+📂 FILES CHANGED:
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+1. frontend/src/components/stumber/DirectionSelector.tsx
+   → Replaced with MultimodalInputBox
+
+2. frontend/src/pages/stumber.tsx
+   → Removed duplicate widget
+
+
+🎯 READY FOR YOUR VERIFICATION!
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Please test the corrected implementation and let me know! 🚀
+
